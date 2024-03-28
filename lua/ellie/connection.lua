@@ -1,8 +1,9 @@
 local M = {}
 
-function M.new(key)
+function M.new(key, reference_bufnr)
 	local instance = setmetatable({
 		key = key,
+		_reference_bufnr = reference_bufnr or vim.fn.bufnr("%"),
 		_job_id = nil,
 		_state = nil,
 		_response_queue = {},
@@ -16,12 +17,14 @@ function M.new(key)
 end
 
 function M:_start()
-	print(vim.inspect(self))
 	assert(self._job_id == nil, "Already started")
 	local Config = require("ellie.config")
 
 	local iex_path = require("ellie.util").iex_path()
-	local command = { unpack(Config.cmd), "--dot-iex", iex_path }
+	local command = vim.tbl_flatten({
+		Config.buffer_to_cmd(self._reference_bufnr) or Config.cmd,
+		{ "--dot-iex", iex_path },
+	})
 
 	print("RUNNING", vim.inspect(command))
 
@@ -42,6 +45,8 @@ end
 
 ---@param lines string[]
 function M:_on_output(_, lines)
+	-- TODO: we might not receive whole lines at a time. A full line should have a blank
+	-- string after it (?)
 	local buffer = {}
 	for _, line in ipairs(lines) do
 		local prompt_match = line:match("<~ellie:(.+)~> ")
@@ -62,7 +67,7 @@ function M:_on_output(_, lines)
 		local handler = table.remove(self._response_queue, 0)
 		if handler then
 			handler(buffer)
-		else
+		elseif #buffer then
 			print("OUTPUT:", vim.inspect(buffer))
 		end
 	end

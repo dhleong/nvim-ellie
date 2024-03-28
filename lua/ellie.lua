@@ -1,5 +1,9 @@
 local M = {}
 
+function M.setup(opts)
+	require("ellie.config").update(opts)
+end
+
 ---@alias ConnectionParams {service: string, host: string|nil}
 ---@param params ConnectionParams|nil
 function M.connection(params)

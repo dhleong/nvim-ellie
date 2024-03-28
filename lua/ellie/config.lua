@@ -1,5 +1,8 @@
 local default_config = {
 	cmd = { "iex" },
+	buffer_to_cmd = function(_)
+		return require("ellie.config").cmd
+	end,
 	buffer_to_params = function(_)
 		return nil
 	end,
