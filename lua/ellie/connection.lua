@@ -21,9 +21,13 @@ function M:_start()
 	local Config = require("ellie.config")
 
 	local iex_path = require("ellie.util").iex_path()
+	local suffix, _ = string.gsub(vim.fn.reltimestr(vim.fn.reltime()), "[.]", "_")
+	local session_name = "ellie_" .. suffix
 	local command = vim.tbl_flatten({
 		Config.buffer_to_cmd(self._reference_bufnr) or Config.cmd,
 		{ "--dot-iex", iex_path },
+		{ "--sname", session_name },
+		{ "--remsh", self.key },
 	})
 
 	print("RUNNING", vim.inspect(command))
