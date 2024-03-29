@@ -36,4 +36,14 @@ function M.reload_module(params, module_name)
 	connection:send("r " .. module_name)
 end
 
+function M.prompt_eval(params)
+	local connection = M.connection(params)
+	local ok, input = require("ellie.replish").prompt()
+	if ok then
+		connection:call(input, function(output)
+			print(table.concat(output, "\n"))
+		end)
+	end
+end
+
 return M
