@@ -1,3 +1,5 @@
+local IGNORE_CALL = "IGNORE_CALL"
+
 local M = {}
 
 function M.new(key, reference_bufnr)
@@ -6,6 +8,8 @@ function M.new(key, reference_bufnr)
 		_reference_bufnr = reference_bufnr or vim.fn.bufnr("%"),
 		_job_id = nil,
 		_state = nil,
+		_pending_line = "",
+		_pending_output_buffer = {},
 		_response_queue = {},
 	}, {
 		__index = M,
@@ -30,8 +34,6 @@ function M:_start()
 		{ "--remsh", self.key },
 	})
 
-	print("RUNNING", vim.inspect(command))
-
 	vim.cmd([[-tabnew]])
 	self._bufnr = vim.fn.bufnr("%")
 	self._job_id = vim.fn.termopen(command, {
@@ -39,8 +41,8 @@ function M:_start()
 		on_stdout = function(...)
 			self:_on_output(...)
 		end,
-		on_exit = function(...)
-			self:_on_exit(...)
+		on_exit = function()
+			self:_on_exit()
 		end,
 	})
 	vim.bo.bufhidden = "hide"
@@ -49,30 +51,32 @@ end
 
 ---@param lines string[]
 function M:_on_output(_, lines)
-	-- TODO: we might not receive whole lines at a time. A full line should have a blank
-	-- string after it (?)
-	local buffer = {}
-	for _, line in ipairs(lines) do
-		local prompt_match = line:match("<~ellie:(.+)~> ")
-		if prompt_match then
-			self._state = prompt_match
-		elseif line == self._last_sent then
-			self._last_sent = nil
-		elseif not self._state then
-		-- NOTE: There's some preamble before the first prompt that we are just
-		-- igoring in this block. It might be useful for debugging to parse the
-		-- versions, but for now... let's ignore.
-		else
-			buffer[#buffer + 1] = vim.trim(line)
+	for i, line in ipairs(lines) do
+		if i == 1 then
+			line = self._pending_line .. line
 		end
-	end
+		self._pending_line = line
 
-	if #self._response_queue then
-		local handler = table.remove(self._response_queue, 0)
-		if handler then
-			handler(buffer)
-		elseif #buffer then
-			print("OUTPUT:", vim.inspect(buffer))
+		local prompt_match = line:match("<~ellie:(.+)~> ")
+
+		if self._last_sent then
+			if vim.endswith(line, self._last_sent) then
+				self._last_sent = nil
+			end
+		elseif prompt_match then
+			local is_repl_header = not self._state
+			self._state = prompt_match
+
+			if is_repl_header then
+				-- NOTE: There's some preamble before the first prompt that we are just
+				-- igoring in this block. It might be useful for debugging to parse the
+				-- versions, but for now... let's ignore.
+				self._pending_output_buffer = {}
+			else
+				self:_submit_output_buffer()
+			end
+		elseif i < #lines then
+			self._pending_output_buffer[#self._pending_output_buffer + 1] = vim.trim(line)
 		end
 	end
 end
@@ -81,6 +85,20 @@ function M:_on_exit()
 	require("ellie.connections").set(self.key, nil)
 	self._job_id = nil
 	self._bufnr = nil
+end
+
+function M:_submit_output_buffer()
+	local buffer = self._pending_output_buffer
+	self._pending_output_buffer = {}
+
+	if #self._response_queue > 0 then
+		local handler = table.remove(self._response_queue, 0)
+		if handler and handler ~= IGNORE_CALL then
+			handler(buffer)
+		else
+			print("OUTPUT:", vim.inspect(buffer))
+		end
+	end
 end
 
 function M:hide()
@@ -107,7 +125,12 @@ function M:call(input, on_response)
 
 	local to_send = input .. "\r"
 	self._last_sent = to_send
-	self._response_queue[#self._response_queue + 1] = on_response
+
+	-- NOTE: Apparently, appending nil to a list in lua just... doesn't?
+	-- Or, it sorta does, but doesn't affect the #length. So instead we use a sentinel
+	-- value to represent queue items that should ignore the response
+	self._response_queue[#self._response_queue + 1] = on_response or IGNORE_CALL
+
 	vim.fn.chansend(self._job_id, to_send)
 end
 
