@@ -2,6 +2,20 @@ local IGNORE_CALL = "IGNORE_CALL"
 
 local M = {}
 
+local function termopen(command, opts)
+	if vim.fn.has("nvim-0.12") == 1 then
+		return vim.fn.jobstart(
+			command,
+			vim.tbl_extend("error", opts, {
+				term = true,
+			})
+		)
+	else
+		---@diagnostic disable-next-line: deprecated
+		return vim.fn.termopen(command, opts)
+	end
+end
+
 function M.new(key, reference_bufnr)
 	local instance = setmetatable({
 		key = key,
@@ -27,16 +41,18 @@ function M:_start()
 	local iex_path = require("ellie.util").iex_path()
 	local suffix, _ = string.gsub(vim.fn.reltimestr(vim.fn.reltime()), "[.]", "_")
 	local session_name = "ellie_" .. suffix
-	local command = vim.tbl_flatten({
+	local command = vim.iter({
 		Config.buffer_to_cmd(self._reference_bufnr) or Config.cmd,
 		{ "--dot-iex", iex_path },
 		{ "--sname", session_name },
 		{ "--remsh", self.key },
 	})
+		:flatten()
+		:totable()
 
 	vim.cmd([[-tabnew]])
 	self._bufnr = vim.fn.bufnr("%")
-	self._job_id = vim.fn.termopen(command, {
+	self._job_id = termopen(command, {
 		stdin = "pipe",
 		on_stdout = function(...)
 			self:_on_output(...)
