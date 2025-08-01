@@ -17,7 +17,9 @@ local function script_path()
 	return str:match("(.*" .. get_path_separator() .. ")")
 end
 
-local M = {}
+local M = {
+	_last_params = nil,
+}
 
 function M.host()
 	local host = vim.fn.hostname()
@@ -36,10 +38,11 @@ end
 
 ---@param params ConnectionParams|nil
 function M.parse_params(params)
-	local actual_params = params or require("ellie.config").buffer_to_params(vim.fn.bufnr("%"))
+	local actual_params = params or require("ellie.config").buffer_to_params(vim.fn.bufnr("%")) or M._last_params
 	if not actual_params then
 		return nil
 	end
+	M._last_params = actual_params
 	return M.params_to_key(actual_params)
 end
 
