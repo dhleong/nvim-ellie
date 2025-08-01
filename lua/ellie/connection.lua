@@ -73,6 +73,13 @@ function M:_on_output(_, lines)
 		end
 		self._pending_line = line
 
+		if vim.fn.stridx(line, "*** ERROR: Shell process terminated!") >= 0 then
+			-- Connection terminated!
+			print("Shell terminated!")
+			vim.fn.jobstop(self._job_id)
+			return
+		end
+
 		local prompt_match = line:match("<~ellie:(.+)~> ")
 
 		if self._last_sent then
